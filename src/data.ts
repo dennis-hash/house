@@ -40,7 +40,7 @@ export const services: Service[] = [
     icon: Code2,
     title: "Bespoke Software",
     description:
-      "Custom systems built around how your business actually works, from internal tools to full ERPs.",
+      "Custom systems built around how your business actually works, from internal tools to full ERPs..",
     points: ["Business process automation", "ERP & back-office systems", "Legacy modernisation"],
   },
   {

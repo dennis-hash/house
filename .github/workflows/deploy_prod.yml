@@ -1,0 +1,72 @@
+name: Deploy InkredTech Website to Production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # allows a manual re-deploy from the Actions tab
+
+concurrency:
+  group: deploy-inkredtech-prod
+  cancel-in-progress: false
+
+env:
+  DEPLOY_DIR: /var/www/inkredtech.com
+  TEMP_DIR: /home/${{ secrets.SERVER_USER }}/inkredtech
+  BUILD_DIR: dist
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install & Build
+        run: |
+          npm ci
+          npm run build
+
+      - name: Upload Files to Temp Directory
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "dist/*"
+          target: ${{ env.TEMP_DIR }}
+          strip_components: 1
+          rm: true # clear leftovers from a previously failed deploy
+
+      - name: Swap and Nginx Reload
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+
+            # 1. Abort if the upload is missing, so we never wipe the live site for nothing
+            test -f ${{ env.TEMP_DIR }}/index.html || { echo "❌ index.html not found in upload"; exit 1; }
+
+            # 2. Ensure the final destination exists
+            mkdir -p ${{ env.DEPLOY_DIR }}
+
+            # 3. Delete old version (including dotfiles) and move new version into place
+            find ${{ env.DEPLOY_DIR }} -mindepth 1 -delete
+            mv ${{ env.TEMP_DIR }}/* ${{ env.DEPLOY_DIR }}/
+
+            # 4. Reload Nginx using the specific sudo permission
+            sudo systemctl reload nginx
+
+            # 5. Final Cleanup
+            rm -rf ${{ env.TEMP_DIR }}
+            echo "✅ Successfully deployed to Production (inkredtech.com)"
